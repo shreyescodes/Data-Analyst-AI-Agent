@@ -1,0 +1,40 @@
+# Git
+.git/
+.gitignore
+
+# Virtual environments
+venv/
+env/
+.env/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+htmlcov/
+.coverage
+.tox/
+
+# VS Code
+.vscode/
+.devcontainer/
+
+# Data and Models
+data/
+data_versions/
+*.csv
+*.tsv
+*.xlsx
+*.db
+*.sqlite3
+*.pkl
+*.h5
+
+# Local config
+.env
+.env.*
+secrets.json
+*.log
