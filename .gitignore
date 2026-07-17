@@ -105,3 +105,7 @@ data/
 .env.*
 secrets.json
 Data-Analytics-AI-Agent.code-workspace
+
+# Custom exclusions
+data_versions/
+.devcontainer/
