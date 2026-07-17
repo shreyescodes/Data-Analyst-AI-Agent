@@ -7,4 +7,4 @@ scikit-learn>=1.7.2
 sqlalchemy>=2.0.43
 streamlit>=1.50.0
 ydata-profiling>=4.17.0
-setuptools<70
+setuptools<84
