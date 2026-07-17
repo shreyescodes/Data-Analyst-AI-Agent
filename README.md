@@ -132,8 +132,6 @@ We welcome contributions. Please see our [CONTRIBUTING.md](CONTRIBUTING.md) file
 ## Author
 
 **shreyescodes**  
-Passionate Data Analyst | Focused on Big Data Analytics, AI Agents, and Workflow Automation
-
 - GitHub: [shreyescodes](https://github.com/shreyescodes)
 
 ---
