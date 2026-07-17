@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 import hashlib
 
+
 class VersionControl:
     def __init__(self, base_path="data_versions"):
         self.base_path = base_path
@@ -29,7 +30,7 @@ class VersionControl:
             "timestamp": datetime.now().isoformat(),
             "shape": df.shape,
             "message": message,
-            "hash": self._hash_file(file_path)
+            "hash": self._hash_file(file_path),
         }
 
         with open(os.path.join(version_dir, "metadata.json"), "w") as f:
