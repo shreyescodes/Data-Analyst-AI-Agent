@@ -1,142 +1,98 @@
 # Data Analytics AI Agent
 
-A data analytics tool that automates the entire data lifecycle — from data ingestion to transformation, querying, visualization, and reporting.
+A data analytics tool that automates the entire data lifecycle — from data ingestion to transformation, querying, visualization, and reporting using natural language.
 
-Built using Python, FastAPI, Streamlit, and PostgreSQL. It acts as an end-to-end tool for data analysts, making data management simple through automation and natural-language interaction.
+## Problem
+Data analysts and business professionals often spend too much time on repetitive tasks like cleaning data, writing complex SQL queries, and building manual reports. Non-technical users struggle to extract insights from raw data without relying on engineering teams.
 
----
+## Solution
+This system provides an end-to-end automation tool that allows users to ingest data, automatically clean it, and query it using natural English. It translates natural language to SQL, generates instant visualizations, and creates automated reports, empowering users of all technical levels to gain insights quickly.
 
-## Tech Stack
+## Architecture
+```mermaid
+graph TD
+    UI[User Interface: Streamlit Application] --> API[Backend: FastAPI]
+    API --> NLP[Model: LangChain NLP Engine]
+    API --> ETL[Data Processing Engine: ETL, Validation, Reporting]
+    NLP --> DB[Retrieval/Database Layer: PostgreSQL]
+    ETL --> DB
+    DB --> Tools[Tools: Pandas, NumPy, SQLAlchemy]
+    API -.-> Eval[Evaluation System: Future enhancement]
+```
 
-| Category | Tools |
-|----------|-------|
-| Languages | Python |
-| Frameworks | FastAPI, Streamlit |
-| Libraries | Pandas, NumPy, SQLAlchemy, LangChain |
-| Database | PostgreSQL |
-| Key Concepts | ETL Automation, NLP Querying, Data Validation, Visualization, Reporting |
-
----
-
-## Core Features
-
+## Main Features
 - **Multi-Source Data Input**: Supports CSV/XLSX file uploads, API connections, and direct database linking.
 - **Automated ETL Pipeline**: Cleans, validates, and transforms datasets to ensure data quality and schema consistency.
-- **NLP-Based SQL Querying**: Query your datasets using plain English, which gets converted into SQL queries.
+- **NLP-Based SQL Querying**: Query datasets using plain English, which gets converted into SQL queries.
 - **Dynamic Visualization**: Generate interactive charts and plots instantly.
 - **Automated Reporting**: Export insights as downloadable PDF or CSV reports.
 - **Governed Workflows**: Modular backend design for secure and auditable data operations.
 
----
+## Tech Stack
+- **Python**: Core programming language for data manipulation and backend logic.
+- **FastAPI**: Provides a fast, scalable API layer for handling data flows and NLP requests.
+- **Streamlit**: Enables rapid development of interactive and user-friendly web interfaces.
+- **PostgreSQL**: Robust, relational database for structured storage and SQL query execution.
+- **Pandas & NumPy**: Essential libraries for efficient data manipulation, cleaning, and mathematical operations.
+- **SQLAlchemy**: ORM for secure and flexible database connections and management.
+- **LangChain**: Powers the NLP-to-SQL translation, making data querying accessible via natural language.
+- **Docker**: For easy containerization and reproducible environments.
 
-## System Architecture Overview
+## Dataset
+*(This project works with user-provided datasets, but here is a general overview of data handling)*
+- **Source:** User-uploaded CSV/XLSX files, API endpoints, or direct database connections.
+- **Cleaning:** Automated via the ETL pipeline which handles missing values, schema validation, and formatting.
+- **Privacy Limitations:** Since data is uploaded by users, the system relies on the local environment or secure backend deployment to ensure privacy. RBAC is planned for governed environments.
 
-```text
-┌────────────────────────────────────────┐
-│Frontend (UI)                           │
-│Streamlit Application                   │
-└────────────────────────────────────────┘
-│
-▼
-┌────────────────────────────────────────┐
-│Backend (API Layer)                     │
-│FastAPI - Handles data flow & NLP SQL   │
-└────────────────────────────────────────┘
-│
-▼
-┌────────────────────────────────────────┐
-│Data Processing Engine                  │
-│ETL Pipeline, Validation, Reporting     │
-└────────────────────────────────────────┘
-│
-▼
-┌────────────────────────────────────────┐
-│PostgreSQL Database                     │
-│Structured Storage & Query Execution    │
-└────────────────────────────────────────┘
-```
+## Evaluation
+*(Metrics below are placeholders to be updated based on specific model deployment)*
+- **Test dataset size:** TBD
+- **Metrics:** SQL Query Accuracy (Execution Success Rate), Data Cleaning Completeness.
+- **Baseline:** Manual SQL querying and manual data cleaning via Pandas.
+- **Final results:** TBD
+- **Failure cases:** Complex nested SQL queries may sometimes be misinterpreted by the NLP engine; highly unstructured data might fail automated ETL validations.
 
----
+## Installation
 
-## Project Structure
-
-```text
-Data-Analytics-AI-Agent/
-├── app.py                # Streamlit app
-├── modules/
-│   ├── __init__.py
-│   ├── ai_services.py
-│   ├── data_cleaning.py
-│   ├── data_ingestion.py
-│   ├── database_manager.py
-│   ├── profiling.py
-│   └── visualization.py
-├── tests/                # Unit tests
-├── requirements.txt      # Project dependencies
-├── requirements-dev.txt  # Dev dependencies
-├── docker-compose.yml    # Docker compose configuration
-├── Dockerfile            # Docker image definition
-├── Makefile              # Task runner shortcuts
-├── utils/
-│   ├── __init__.py
-│   └── helpers.py
-├── README.md            
-├── CONTRIBUTING.md       # Contribution guidelines
-├── CHANGELOG.md          # Project version history
-├── .devcontainer/
-│   └── devcontainer.json
-├── .github/              # CI/CD and Templates
-├── .gitignore
-└── LICENSE
-```
-
----
-
-## How It Works
-
-1. **Ingest** data from multiple sources (upload, API, or Database).
-2. **Validate and Clean** via automated ETL pipelines.
-3. **Query** using natural language which gets converted into SQL.
-4. **Visualize** patterns and metrics instantly.
-5. **Export Reports** in multiple formats like interactive web reports or cleaned CSV files.
-
----
-
-## Future Enhancements
-
-- Streamlit Cloud or GCP deployment for scalable access.
-- Role-Based Access Control (RBAC) for governed environments.
-- Automated scheduling and reporting pipelines.
-- Integration with BigQuery or Hive for big-data scalability.
-
----
-
-## Running with Docker
-
-You can easily run this application without installing Python locally by using Docker.
-Ensure you have Docker and Docker Compose installed on your machine, then run:
-
+### Using Docker (Recommended)
+You can easily run this application without installing Python locally:
+1. Ensure you have Docker and Docker Compose installed.
+2. Clone the repository and navigate into it.
+3. Run the following command:
 ```bash
 docker-compose up -d
 ```
 The application will be available at `http://localhost:8501`.
 
----
+### Local Development
+1. Clone the repository.
+2. Create and activate a virtual environment.
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+```
+4. Run the Streamlit app:
+```bash
+streamlit run app.py
+```
 
-## Contributing
+## Cost and Performance
+*(Placeholders to be filled based on actual usage)*
+- **Average latency:** < 2 seconds for basic NLP to SQL queries.
+- **Average tokens:** Depends on the underlying LLM provider (e.g., OpenAI via LangChain).
+- **Estimated cost:** Primarily driven by API costs of the LLM provider; local hosting reduces cost to infrastructure only.
+- **Database size:** Scalable based on PostgreSQL storage limits.
+- **Deployment setup:** Dockerized; Streamlit Cloud or GCP deployment planned for scalability.
 
-We welcome contributions. Please see our [CONTRIBUTING.md](CONTRIBUTING.md) file for details on how to set up your local development environment, run tests, and submit pull requests.
+## Limitations
+- The NLP-to-SQL engine may struggle with highly complex, multi-join queries or ambiguous natural language requests.
+- Automated cleaning might require manual intervention for highly irregular or dirty datasets.
+- Currently lacks comprehensive Role-Based Access Control (RBAC) for enterprise environments.
 
----
-
-## Author
-
-**shreyescodes**  
-- GitHub: [shreyescodes](https://github.com/shreyescodes)
-
----
-
-## License
-
-MIT License (c) 2025 shreyescodes.  
-Feel free to fork, contribute, or enhance this project.
+## Future Improvements
+- Streamlit Cloud or GCP deployment for scalable access.
+- Role-Based Access Control (RBAC) for governed environments.
+- Automated scheduling and reporting pipelines.
+- Integration with BigQuery or Hive for big-data scalability.
+- Improve evaluation system and add specific LLM benchmarking metrics.
