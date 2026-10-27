@@ -147,6 +147,18 @@ class TestAssistant:
         assert insight.source is Source.LLM
         assert "North" in client.prompts[0][1]
 
+    def test_summary_prompt_includes_verified_facts(self, sales):
+        # Regression: a small model named the wrong region as the top seller
+        # when it had to read the maximum off the CSV itself.
+        client = FakeClient(["North."])
+        totals = sales.groupby("region", as_index=False)["units"].sum()
+
+        Assistant(client).summarise("Which region sold the most?", "SELECT 1", totals)
+
+        prompt = client.prompts[0][1]
+        assert "Verified facts:" in prompt
+        assert "- Highest **units**: North (17)" in prompt
+
     def test_summary_falls_back(self, sales):
         insight = Assistant(FakeClient([LLMError("down")])).summarise("q", "SELECT 1", sales)
 

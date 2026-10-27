@@ -43,6 +43,8 @@ Rules:
 INSIGHT_SYSTEM_PROMPT = """\
 You are a careful data analyst. Answer the user's question using only the query
 result provided. Be concise: two to four sentences or a short bullet list.
+The "Verified facts" were computed exactly from the full result: rely on them
+over your own reading of the table, and never contradict them.
 Quote the numbers you rely on and never invent values that are not in the result.
 If the result does not answer the question, say so."""
 
@@ -112,9 +114,12 @@ class Assistant:
         if self._client is None or result.empty:
             return Insight(rule_based_summary(result), Source.RULES)
 
+        # Small models misread tables (e.g. naming the wrong maximum), so the
+        # facts that matter are computed in code and passed in as ground truth.
         table = result.head(_MAX_RESULT_ROWS).to_csv(index=False)[:_MAX_RESULT_CHARS]
         prompt = (
             f"Question: {question}\n\nSQL:\n{sql}\n\n"
+            f"Verified facts:\n{rule_based_summary(result)}\n\n"
             f"Result ({len(result)} rows; first {min(len(result), _MAX_RESULT_ROWS)} "
             f"shown as CSV):\n{table}"
         )

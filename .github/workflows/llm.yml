@@ -62,6 +62,7 @@ jobs:
         run: uv run pytest -m live -v
 
       - name: NL-to-SQL evaluation
+        if: ${{ !cancelled() }}  # collect results even if a live test failed
         run: |
           uv run python scripts/evaluate_nl_to_sql.py | tee eval-results.txt
           {
@@ -72,6 +73,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Screenshots of the AI features
+        if: ${{ !cancelled() }}  # collect results even if a live test failed
         run: uv run python scripts/capture_screenshots.py --llm
 
       - uses: actions/upload-artifact@v4
