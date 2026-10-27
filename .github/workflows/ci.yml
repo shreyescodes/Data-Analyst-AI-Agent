@@ -63,14 +63,28 @@ jobs:
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
+      - name: Validate compose file
+        run: docker compose config --quiet
       - name: Build image
         run: docker build -t data-analyst-agent:ci .
       - name: Start container and wait for health endpoint
         run: |
           docker run -d --name app -p 8501:8501 data-analyst-agent:ci
           for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8501/_stcore/health; then exit 0; fi
+            if curl -fsS http://localhost:8501/_stcore/health; then break; fi
+            if [ "$i" = 30 ]; then docker logs app; exit 1; fi
             sleep 2
           done
-          docker logs app
+      - name: Docker HEALTHCHECK reports healthy
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' app)
+            echo "health: $status"
+            if [ "$status" = healthy ]; then exit 0; fi
+            sleep 5
+          done
           exit 1
+      - name: Runs as non-root
+        run: test "$(docker exec app id -u)" = 10001
+      - name: Core features work inside the image
+        run: docker exec -i app python - < scripts/container_smoke_test.py

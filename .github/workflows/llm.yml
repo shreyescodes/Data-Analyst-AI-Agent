@@ -1,0 +1,83 @@
+name: Local LLM
+
+# Runs the AI features against a real open-source model served by Ollama on
+# the CI machine: no API key and no hosted provider. Produces the accuracy
+# report and the AI screenshots used in the README.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "src/**"
+      - "evals/**"
+      - "scripts/**"
+      - "tests/test_llm_live.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/llm.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.13.6"
+  LLM_BASE_URL: http://localhost:11434/v1
+  LLM_MODEL: qwen2.5-coder:3b
+  LLM_TIMEOUT_SECONDS: "300"
+
+jobs:
+  local-llm:
+    name: Live tests, eval & screenshots (Ollama)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      ollama:
+        image: ollama/ollama:0.40.11
+        ports:
+          - 11434:11434
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked --all-groups
+
+      - name: Pull model
+        run: |
+          for i in $(seq 1 30); do curl -fsS http://localhost:11434/api/version && break; sleep 2; done
+          curl -fsS http://localhost:11434/api/pull -d "{\"model\": \"$LLM_MODEL\", \"stream\": false}"
+          curl -fsS http://localhost:11434/api/tags
+
+      - name: Live LLM tests
+        env:
+          RUN_LIVE_LLM_TESTS: "1"
+        run: uv run pytest -m live -v
+
+      - name: NL-to-SQL evaluation
+        run: |
+          uv run python scripts/evaluate_nl_to_sql.py | tee eval-results.txt
+          {
+            echo "### NL-to-SQL evaluation ($LLM_MODEL via Ollama)"
+            echo '```'
+            cat eval-results.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Screenshots of the AI features
+        run: uv run python scripts/capture_screenshots.py --llm
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-llm-results
+          path: |
+            eval-results.txt
+            docs/images/*-local-llm.png
