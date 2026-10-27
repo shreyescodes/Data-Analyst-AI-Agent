@@ -1,31 +1,45 @@
-.PHONY: install install-dev run test lint format build up down
+.DEFAULT_GOAL := help
+SOURCES := src tests app.py scripts
 
-install:
-	pip install -r requirements.txt
+.PHONY: help install run lint format typecheck test test-fast check screenshots docker-build docker-up docker-down
 
-install-dev: install
-	pip install -r requirements-dev.txt
+help: ## Show available targets
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
-run:
-	streamlit run app.py
+install: ## Install the app and dev tools from the lock file
+	uv sync --locked --all-groups
+	uv run pre-commit install
 
-test:
-	pytest tests/
+run: ## Start the app on http://localhost:8501
+	uv run streamlit run app.py
 
-lint:
-	flake8 .
-	black --check .
-	isort --check-only .
+lint: ## Lint and check formatting
+	uv run ruff check $(SOURCES)
+	uv run ruff format --check $(SOURCES)
 
-format:
-	black .
-	isort .
+format: ## Auto-fix lint issues and format
+	uv run ruff check --fix $(SOURCES)
+	uv run ruff format $(SOURCES)
 
-build:
-	docker-compose build
+typecheck: ## Run mypy in strict mode
+	uv run mypy
 
-up:
-	docker-compose up -d
+test: ## Run all tests with coverage
+	uv run pytest --cov --cov-report=term-missing
 
-down:
-	docker-compose down
+test-fast: ## Run tests, skipping slow ones
+	uv run pytest -m "not slow"
+
+check: lint typecheck test ## Everything CI runs
+
+screenshots: ## Regenerate README screenshots (needs Chrome and the screenshots group)
+	uv run --group screenshots python scripts/capture_screenshots.py
+
+docker-build: ## Build the production image
+	docker compose build
+
+docker-up: ## Run the app in Docker
+	docker compose up -d
+
+docker-down: ## Stop the Docker app
+	docker compose down
