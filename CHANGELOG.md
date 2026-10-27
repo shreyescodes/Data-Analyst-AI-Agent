@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Local models with no API key: pointing `LLM_BASE_URL` at Ollama, LM Studio or llama.cpp enables AI features, and the UI states that no data leaves the machine.
+- NL-to-SQL evaluation: 20 questions with reference SQL over the penguins data, scored on execution accuracy (`make eval`).
+- Opt-in live LLM tests (`pytest -m live`) and an LLM mode for the screenshot script.
+
 ## [0.2.0] - 2026-10-27
 
 A rewrite focused on correctness, safety and maintainability.

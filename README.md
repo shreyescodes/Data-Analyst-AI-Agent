@@ -165,21 +165,39 @@ provider when one is configured (see [Security](#security)).
 
 ## Evaluation
 
-- **Automated tests:** 186 tests (`pytest`), ~90% branch coverage, enforced at ≥85% in CI. They include:
+- **Automated tests:** 193 tests (`pytest`), ~90% branch coverage, enforced at ≥85% in CI. They include:
   - regression tests for each bug fixed in the rewrite (for example `NaN` becoming the string `"nan"`, outlier removal dropping rows with missing values, broken chart type inference);
   - security tests proving writes, multi-statement injection and runaway queries are refused, and that private-network URLs are blocked;
   - end-to-end tests that drive the real Streamlit app (load → clean → ask → snapshot) with `streamlit.testing.v1.AppTest`.
-- **Rule-based SQL:** deterministic, with every supported question shape covered by tests whose generated SQL is executed.
-- **LLM SQL accuracy:** not benchmarked yet. The planned approach is a fixed set of question/expected-result pairs over the bundled datasets, scored on execution match (see [Future improvements](#future-improvements)).
+- **Live LLM tests** (`pytest -m live`, opt-in with `RUN_LIVE_LLM_TESTS=1`) check that a real model produces SQL that runs and returns the right rows.
+
+### Natural-language-to-SQL accuracy
+
+[`evals/nl_to_sql_penguins.json`](evals/nl_to_sql_penguins.json) holds 20 questions about the raw
+penguins table, each with hand-written reference SQL. They cover aggregates, grouping, filters,
+`NULL` handling, ranking and `DISTINCT`. [`scripts/evaluate_nl_to_sql.py`](scripts/evaluate_nl_to_sql.py)
+runs the generated and the reference query and scores **execution accuracy**: a question passes when
+both return the same rows, ignoring column names, column and row order, and float noise.
+
+| Mode | Execution accuracy | Median time per question |
+|---|---:|---:|
+| Keyword rules (no LLM) | 8 / 20 (40%) | < 0.01 s |
+
+The rules handle aggregates and single-column grouping. They fail on filters ("female", "on Dream
+island"), rankings and `DISTINCT`, which is where an LLM is needed. Reproduce with `make eval`
+(add `LLM_*` variables to evaluate a model).
 
 ## Installation
 
 ### Docker
 
 ```bash
-cp .env.example .env    # optional: add LLM_API_KEY
+cp .env.example .env    # optional: configure an LLM
 docker compose up --build
 ```
+
+To use a model running on the host (Ollama, LM Studio, llama.cpp), set
+`LLM_BASE_URL=http://host.docker.internal:<port>/v1` in `.env`.
 
 Open http://localhost:8501. Snapshots persist in the `versions` volume. The
 image is a multi-stage build that runs as a non-root user with a health check;
@@ -191,6 +209,20 @@ CI builds it and checks the health endpoint on every push.
 uv sync                      # creates .venv from uv.lock
 uv run streamlit run app.py
 ```
+
+### With a local model (no API key)
+
+Any OpenAI-compatible local server works, and nothing leaves your machine:
+
+| Server | Start it | Then set |
+|---|---|---|
+| [Ollama](https://ollama.com) | `ollama pull qwen2.5-coder:3b` | `LLM_BASE_URL=http://localhost:11434/v1` `LLM_MODEL=qwen2.5-coder:3b` |
+| [LM Studio](https://lmstudio.ai) | load a model, start the server | `LLM_BASE_URL=http://localhost:1234/v1` `LLM_MODEL=<model id>` |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | `llama-server -m model.gguf --port 8080` | `LLM_BASE_URL=http://localhost:8080/v1` `LLM_MODEL=<any name>` |
+
+Setting `LLM_BASE_URL` to anything other than the hosted default turns the AI features on;
+`LLM_API_KEY` is only needed for hosted providers. Small code-tuned models (Qwen2.5-Coder 1.5B
+to 7B) run on a laptop CPU.
 
 ### Local with pip
 
@@ -208,8 +240,8 @@ All settings are environment variables (see [`.env.example`](.env.example)); all
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `LLM_API_KEY` | unset | Enables LLM features. `HF_TOKEN` / `HF_API_KEY` are also accepted. |
-| `LLM_BASE_URL` | `https://router.huggingface.co/v1` | Any OpenAI-compatible endpoint. |
+| `LLM_API_KEY` | unset | Key for hosted providers; enables the default Hugging Face endpoint. `HF_TOKEN` / `HF_API_KEY` are also accepted. Not needed for local servers. |
+| `LLM_BASE_URL` | `https://router.huggingface.co/v1` | Any OpenAI-compatible endpoint. Setting a non-default URL (such as a local Ollama server) enables AI features without a key. |
 | `LLM_MODEL` | `meta-llama/Llama-3.3-70B-Instruct` | Model id for the endpoint. |
 | `LLM_TIMEOUT_SECONDS` | `30` | Per-request timeout (requests are retried on 429/5xx). |
 | `MAX_UPLOAD_MB` | `100` | Upload size limit (also set in `.streamlit/config.toml`). |
@@ -222,7 +254,7 @@ All settings are environment variables (see [`.env.example`](.env.example)); all
 ## Security
 
 - **SQL:** queries from users and the LLM run on a SQLite connection opened in read-only mode with `query_only`, with a row cap and a timeout. Rationale in [ADR-0001](docs/decisions/0001-read-only-sqlite-for-untrusted-sql.md).
-- **LLM data exposure:** generating SQL sends only column names and types. Summaries send at most 50 result rows. Without a key, nothing leaves the machine.
+- **LLM data exposure:** generating SQL sends only column names and types. Summaries send at most 50 result rows. With a local model, or with no LLM, nothing leaves the machine.
 - **SSRF:** the HTTP API loader refuses hosts that resolve to private, loopback, link-local or reserved addresses (including the cloud metadata IP), and does not follow redirects.
 - **Uploads:** file type allowlist and size limit; database table names are resolved by reflection, never interpolated into SQL.
 - **Snapshots:** version ids are validated against a strict pattern (no path traversal), and data files are verified by SHA-256 on load.
@@ -249,6 +281,7 @@ make install     # uv sync + pre-commit hooks
 make check       # ruff, mypy --strict, pytest with coverage (what CI runs)
 make test-fast   # skip slow tests
 make run
+make eval        # NL-to-SQL accuracy (rules, or the LLM configured in the environment)
 make screenshots # regenerate README images (needs Chrome)
 ```
 
@@ -276,7 +309,8 @@ Docker base image and the Actions up to date. See [CONTRIBUTING.md](CONTRIBUTING
 │   ├── data/sample_sales.csv
 │   └── ui/                      # Streamlit layer (state, resources, one view per tab)
 ├── tests/                       # Unit, security and end-to-end tests
-├── scripts/capture_screenshots.py
+├── evals/                       # NL-to-SQL evaluation questions + reference SQL
+├── scripts/                     # Screenshot capture, evaluation runner
 └── docs/                        # ADRs, screenshots, demo dataset
 ```
 
@@ -290,7 +324,7 @@ Docker base image and the Actions up to date. See [CONTRIBUTING.md](CONTRIBUTING
 
 ## Future improvements
 
-- An LLM evaluation harness: question/expected-result pairs over the bundled datasets, tracked in CI.
+- Run the evaluation in CI against a small local model, and grow the question set beyond one dataset.
 - Per-column cleaning options (choose which columns each step touches).
 - DuckDB backend for larger datasets (see ADR-0001).
 - Scheduled pipelines and report export.

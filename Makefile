@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SOURCES := src tests app.py scripts
 
-.PHONY: help install run lint format typecheck test test-fast check screenshots docker-build docker-up docker-down
+.PHONY: help install run lint format typecheck test test-fast check eval screenshots screenshots-llm docker-build docker-up docker-down
 
 help: ## Show available targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -32,8 +32,14 @@ test-fast: ## Run tests, skipping slow ones
 
 check: lint typecheck test ## Everything CI runs
 
-screenshots: ## Regenerate README screenshots (needs Chrome and the screenshots group)
+eval: ## Measure NL-to-SQL accuracy (uses LLM_* settings if present, else rules)
+	uv run python scripts/evaluate_nl_to_sql.py
+
+screenshots: ## Regenerate README screenshots in rule-based mode (needs Chrome)
 	uv run --group screenshots python scripts/capture_screenshots.py
+
+screenshots-llm: ## Capture the AI screenshots using the LLM_* settings
+	uv run --group screenshots python scripts/capture_screenshots.py --llm
 
 docker-build: ## Build the production image
 	docker compose build
