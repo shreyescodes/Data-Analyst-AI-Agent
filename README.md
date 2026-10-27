@@ -1,6 +1,7 @@
 # Data Analyst AI Agent
 
 [![CI](https://github.com/shreyescodes/Data-Analyst-AI-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/shreyescodes/Data-Analyst-AI-Agent/actions/workflows/ci.yml)
+[![Local LLM](https://github.com/shreyescodes/Data-Analyst-AI-Agent/actions/workflows/llm.yml/badge.svg)](https://github.com/shreyescodes/Data-Analyst-AI-Agent/actions/workflows/llm.yml)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 ![Type checked: mypy strict](https://img.shields.io/badge/mypy-strict-blue)
 ![Lint: ruff](https://img.shields.io/badge/lint-ruff-261230)
@@ -40,8 +41,8 @@ All screenshots below were captured automatically from the running app by
 [`scripts/capture_screenshots.py`](scripts/capture_screenshots.py), using the
 [Palmer Penguins](https://allisonhorst.github.io/palmerpenguins/) dataset
 (344 real penguins, CC0; a copy is in [`docs/data/penguins.csv`](docs/data/penguins.csv)).
-They show the app's **rule-based mode** (no LLM key). Run `make screenshots`
-to regenerate them.
+Steps 1 to 8 show the **rule-based mode** (no LLM); step 9 shows the **AI mode with a local
+model** and no API key. Regenerate them with `make screenshots` and `make screenshots-llm`.
 
 **1. Load.** The upload is parsed and previewed; the raw data has missing measurements and sexes.
 
@@ -74,6 +75,16 @@ to regenerate them.
 **8. Profiling report.** A full report built with fg-data-profiling, viewable inline or downloadable as HTML.
 
 ![Profile](docs/images/09-profile.png)
+
+**9. AI mode with a local model, no API key.** These were captured by the
+[Local LLM workflow](.github/workflows/llm.yml), which serves `qwen2.5-coder:3b` with
+[Ollama](https://ollama.com) on the CI machine. The question below needs a filter on two columns,
+which the keyword rules cannot handle. The model's SQL is correct and the answer (4,043.49 g)
+matches pandas.
+
+![Asking a filtered question to a local model](docs/images/10-ask-local-llm.png)
+
+![Settings with a local model connected and no API key](docs/images/11-settings-local-llm.png)
 
 ## Main features
 
@@ -169,7 +180,7 @@ provider when one is configured (see [Security](#security)).
   - regression tests for each bug fixed in the rewrite (for example `NaN` becoming the string `"nan"`, outlier removal dropping rows with missing values, broken chart type inference);
   - security tests proving writes, multi-statement injection and runaway queries are refused, and that private-network URLs are blocked;
   - end-to-end tests that drive the real Streamlit app (load → clean → ask → snapshot) with `streamlit.testing.v1.AppTest`.
-- **Live LLM tests** (`pytest -m live`, opt-in with `RUN_LIVE_LLM_TESTS=1`) check that a real model produces SQL that runs and returns the right rows.
+- **Live LLM tests** (`pytest -m live`, opt-in with `RUN_LIVE_LLM_TESTS=1`) check that a real model produces SQL that runs and returns the right rows, and that its summary states the right answer. They run in CI against a local model, with no API key.
 
 ### Natural-language-to-SQL accuracy
 
@@ -182,10 +193,20 @@ both return the same rows, ignoring column names, column and row order, and floa
 | Mode | Execution accuracy | Median time per question |
 |---|---:|---:|
 | Keyword rules (no LLM) | 8 / 20 (40%) | < 0.01 s |
+| `qwen2.5-coder:3b` via Ollama, local, no API key | 15 / 20 (75%) | 2.9 s (CPU-only CI machine) |
 
-The rules handle aggregates and single-column grouping. They fail on filters ("female", "on Dream
-island"), rankings and `DISTINCT`, which is where an LLM is needed. Reproduce with `make eval`
-(add `LLM_*` variables to evaluate a model).
+- The rules handle aggregates and single-column grouping, and fail on filters ("female", "on Dream
+  island"), rankings and `DISTINCT`.
+- The 3B local model handles those. Four of its five misses come from **inventing category values**
+  it has never seen (for example `species = 'Adelie Penguin'`, or adding a species filter to "how
+  many penguins are there?"). The fifth includes the `NULL` group in "average bill length for each
+  sex". Larger models, or passing example column values in the prompt, are the obvious next steps.
+- The live run also caught the model writing a wrong summary ("South sold the most", when North
+  did). Summaries are now grounded in facts computed in code, and a live test guards against it.
+
+The model numbers come from the [Local LLM workflow](.github/workflows/llm.yml), which publishes
+the full per-question report on every run. Reproduce locally with `make eval` (rules), or set
+`LLM_BASE_URL` and `LLM_MODEL` first to evaluate a model.
 
 ## Installation
 
@@ -200,8 +221,10 @@ To use a model running on the host (Ollama, LM Studio, llama.cpp), set
 `LLM_BASE_URL=http://host.docker.internal:<port>/v1` in `.env`.
 
 Open http://localhost:8501. Snapshots persist in the `versions` volume. The
-image is a multi-stage build that runs as a non-root user with a health check;
-CI builds it and checks the health endpoint on every push.
+image is a multi-stage build that runs as a non-root user with a health check. On every push, CI
+builds it, waits for the container's own health check to report healthy, checks that it runs as
+the unprivileged user, and loads, cleans, queries, profiles and snapshots data inside the running
+container ([`scripts/container_smoke_test.py`](scripts/container_smoke_test.py)).
 
 ### Local with uv (recommended)
 
@@ -285,10 +308,15 @@ make eval        # NL-to-SQL accuracy (rules, or the LLM configured in the envir
 make screenshots # regenerate README images (needs Chrome)
 ```
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint and
-type-checking, the test suite on Python 3.11 and 3.12, then builds the Docker
-image and waits for its health check. Dependabot keeps the lock file, the
-Docker base image and the Actions up to date. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Two GitHub Actions workflows run on every pull request:
+
+- [`ci.yml`](.github/workflows/ci.yml): lint, strict type checks, tests on Python 3.11 and 3.12,
+  then a Docker build with a health check and a functional smoke test inside the container.
+- [`llm.yml`](.github/workflows/llm.yml): serves a local model with Ollama on the CI machine (no
+  API key), then runs the live LLM tests, the accuracy evaluation and the AI screenshots.
+
+Dependabot keeps the lock file, the Docker base image and the Actions up to date. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Project structure
 
