@@ -35,7 +35,7 @@ class OpenAICompatibleClient:
         self,
         *,
         base_url: str,
-        api_key: str,
+        api_key: str | None,
         model: str,
         timeout_seconds: float = 30.0,
         session: requests.Session | None = None,
@@ -44,7 +44,8 @@ class OpenAICompatibleClient:
         self._url = f"{base_url.rstrip('/')}/chat/completions"
         self._timeout = timeout_seconds
         self._session = session or _session_with_retries()
-        self._session.headers.update({"Authorization": f"Bearer {api_key}"})
+        if api_key:
+            self._session.headers.update({"Authorization": f"Bearer {api_key}"})
 
     def complete(
         self, system: str, user: str, *, max_tokens: int = 512, temperature: float = 0.2
@@ -76,8 +77,8 @@ class OpenAICompatibleClient:
 
 
 def build_client(settings: Settings) -> ChatClient | None:
-    """Return a client if an API key is configured, otherwise ``None``."""
-    if not settings.llm_api_key:
+    """Return a client if an LLM is configured, otherwise ``None``."""
+    if not settings.llm_enabled:
         return None
     return OpenAICompatibleClient(
         base_url=settings.llm_base_url,

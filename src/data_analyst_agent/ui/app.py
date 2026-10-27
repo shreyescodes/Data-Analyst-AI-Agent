@@ -61,6 +61,7 @@ def _sidebar(state: SessionState, app_settings: Settings) -> None:
 
         st.subheader("AI")
         if app_settings.llm_enabled:
-            st.caption(f"LLM: {app_settings.llm_model}")
+            where = "local" if app_settings.llm_is_local else "hosted"
+            st.caption(f"LLM ({where}): {app_settings.llm_model}")
         else:
-            st.caption("Rule-based mode (no LLM key set)")
+            st.caption("Rule-based mode (no LLM configured)")

@@ -21,7 +21,7 @@ def render(settings: Settings, assistant: Assistant) -> None:
             [
                 ("LLM endpoint", settings.llm_base_url),
                 ("LLM model", settings.llm_model),
-                ("LLM API key", "configured" if settings.llm_enabled else "not set"),
+                ("LLM API key", _key_status(settings)),
                 ("Query row limit", f"{settings.query_row_limit:,}"),
                 ("Query timeout", f"{settings.query_timeout_seconds:g} s"),
                 ("Max upload size", f"{settings.max_upload_mb} MB"),
@@ -40,9 +40,11 @@ def render(settings: Settings, assistant: Assistant) -> None:
 
     if not settings.llm_enabled:
         st.info(
-            "Set `LLM_API_KEY` (or `HF_TOKEN`) to enable AI-generated SQL and "
-            "summaries. A free Hugging Face token works with the default endpoint: "
-            "https://huggingface.co/settings/tokens"
+            "AI features are off. Either run a local model (no key needed), e.g. "
+            "`ollama pull qwen2.5-coder:3b` then set "
+            "`LLM_BASE_URL=http://localhost:11434/v1` and `LLM_MODEL=qwen2.5-coder:3b`; "
+            "or set `LLM_API_KEY` for a hosted provider (a free Hugging Face token "
+            "works with the default endpoint)."
         )
         return
 
@@ -54,3 +56,9 @@ def render(settings: Settings, assistant: Assistant) -> None:
                 st.error(str(exc))
             else:
                 st.success(f"Connected to {settings.llm_model}.")
+
+
+def _key_status(settings: Settings) -> str:
+    if settings.llm_api_key:
+        return "configured"
+    return "not needed (local model)" if settings.llm_is_local else "not set"

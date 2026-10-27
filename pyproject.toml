@@ -109,7 +109,10 @@ disallow_incomplete_defs = false
 minversion = "8.0"
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
-markers = ["slow: tests that take several seconds (deselect with -m 'not slow')"]
+markers = [
+  "slow: tests that take several seconds (deselect with -m 'not slow')",
+  "live: tests that call a real LLM endpoint (opt in with RUN_LIVE_LLM_TESTS=1)",
+]
 filterwarnings = ["error::FutureWarning:data_analyst_agent.*"]
 
 [tool.coverage.run]

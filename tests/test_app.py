@@ -15,7 +15,7 @@ def click(app: AppTest, label: str) -> AppTest:
 
 @pytest.fixture
 def app(monkeypatch, tmp_path):
-    for name in ("LLM_API_KEY", "HF_TOKEN", "HF_API_KEY"):
+    for name in ("LLM_API_KEY", "HF_TOKEN", "HF_API_KEY", "LLM_BASE_URL", "LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("DATA_VERSIONS_DIR", str(tmp_path / "versions"))
     st.cache_resource.clear()  # settings are cached per process

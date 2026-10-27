@@ -7,6 +7,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from data_analyst_agent.exceptions import ConfigurationError
 
@@ -35,7 +36,17 @@ class Settings:
 
     @property
     def llm_enabled(self) -> bool:
-        return bool(self.llm_api_key)
+        """True with an API key, or when pointed at a custom endpoint.
+
+        Local servers (Ollama, LM Studio, llama.cpp) need no key, so setting
+        ``LLM_BASE_URL`` alone is enough to opt in.
+        """
+        return bool(self.llm_api_key) or self.llm_base_url != DEFAULT_LLM_BASE_URL
+
+    @property
+    def llm_is_local(self) -> bool:
+        host = urlparse(self.llm_base_url).hostname or ""
+        return host in {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:

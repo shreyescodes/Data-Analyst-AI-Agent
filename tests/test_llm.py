@@ -69,6 +69,18 @@ def test_network_errors():
         client.complete("s", "u")
 
 
-def test_build_client_requires_key():
+def test_build_client_requires_key_or_custom_endpoint():
     assert build_client(Settings()) is None
     assert isinstance(build_client(Settings(llm_api_key="k")), OpenAICompatibleClient)
+    local = Settings(llm_base_url="http://localhost:11434/v1", llm_model="qwen2.5-coder:3b")
+    assert isinstance(build_client(local), OpenAICompatibleClient)
+
+
+def test_no_authorization_header_without_key():
+    session = mock_session(json_response(completion("ok")))
+
+    OpenAICompatibleClient(
+        base_url="http://localhost:11434/v1", api_key=None, model="m", session=session
+    ).complete("s", "u")
+
+    assert "Authorization" not in session.headers

@@ -38,7 +38,12 @@ def render(state: SessionState, settings: Settings, assistant: Assistant) -> Non
         )
 
     st.subheader("Ask a question")
-    if assistant.uses_llm:
+    if assistant.uses_llm and settings.llm_is_local:
+        st.caption(
+            f"Questions are translated to SQL by **{assistant.model}** running "
+            "locally; no data leaves this machine."
+        )
+    elif assistant.uses_llm:
         st.caption(
             f"Questions are translated to SQL by **{assistant.model}**. Only column "
             "names and types are sent to generate SQL; up to 50 result rows are "
@@ -46,7 +51,7 @@ def render(state: SessionState, settings: Settings, assistant: Assistant) -> Non
         )
     else:
         st.caption(
-            "No LLM key configured: questions are answered with keyword rules "
+            "No LLM configured: questions are answered with keyword rules "
             "(averages, totals, min/max, counts, grouped by a column)."
         )
 

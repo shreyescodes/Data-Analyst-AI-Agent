@@ -38,6 +38,24 @@ def test_reads_all_variables():
 
 
 @pytest.mark.parametrize(
+    ("env", "enabled", "local"),
+    [
+        ({}, False, False),
+        ({"LLM_API_KEY": "k"}, True, False),
+        ({"LLM_BASE_URL": "http://localhost:11434/v1"}, True, True),
+        ({"LLM_BASE_URL": "http://host.docker.internal:1234/v1"}, True, True),
+        ({"LLM_BASE_URL": "https://api.openai.com/v1"}, True, False),
+        ({"LLM_BASE_URL": "https://router.huggingface.co/v1/"}, False, False),
+    ],
+)
+def test_llm_enabled_by_key_or_custom_endpoint(env, enabled, local):
+    settings = Settings.from_env(env)
+
+    assert settings.llm_enabled is enabled
+    assert settings.llm_is_local is local
+
+
+@pytest.mark.parametrize(
     ("env", "expected"),
     [
         ({"HF_API_KEY": "legacy"}, "legacy"),
