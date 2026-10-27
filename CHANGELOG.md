@@ -10,6 +10,11 @@ All notable changes to this project are documented here. The format follows
 - Local models with no API key: pointing `LLM_BASE_URL` at Ollama, LM Studio or llama.cpp enables AI features, and the UI states that no data leaves the machine.
 - NL-to-SQL evaluation: 20 questions with reference SQL over the penguins data, scored on execution accuracy (`make eval`).
 - Opt-in live LLM tests (`pytest -m live`) and an LLM mode for the screenshot script.
+- "Local LLM" CI workflow: serves qwen2.5-coder:3b with Ollama (no API key) and runs the live tests, the evaluation (15/20 vs 8/20 for the rules) and the AI screenshots.
+- Docker CI job now waits for the container's HEALTHCHECK, verifies the non-root user, and runs a functional smoke test inside the container.
+
+### Fixed
+- LLM summaries could contradict the data (a live run named the wrong top region); they are now grounded in facts computed from the result.
 
 ## [0.2.0] - 2026-10-27
 
