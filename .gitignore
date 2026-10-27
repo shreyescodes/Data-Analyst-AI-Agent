@@ -1,111 +1,45 @@
-myenv
-.streamlit/
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
 *.egg-info/
-.installed.cfg
-*.egg
+build/
+dist/
 
 # Virtual environments
-venv/
-ENV/
-env/
 .venv/
-.env/
+venv/
+env/
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 .coverage
 .coverage.*
-.cache
-nosetests.xml
 coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
+htmlcov/
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
 
-# pyenv
-.python-version
-
-# pipenv
-Pipfile.lock
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# VS Code settings
-.vscode/
-
-# MacOS
-.DS_Store
-
-# Logs
+# Runtime data written by the app
+data_versions/
 *.log
 
-# Local files
-*.sqlite3
-*.db
-
-# Ignore data files
-data/
+# User datasets (the bundled sample and docs assets are allowed)
 *.csv
-*.tsv
 *.xlsx
-*.xls
+*.db
+*.sqlite
+*.sqlite3
+!src/data_analyst_agent/data/*.csv
+!docs/data/*.csv
 
-# Ignore model files
-*.h5
-*.hdf5
-*.pkl
-*.joblib
-*.sav
-
-# Ignore images
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.bmp
-
-# Ignore secrets
-*.env
-.env.*
-secrets.json
-Data-Analytics-AI-Agent.code-workspace
-
-# Custom exclusions
-data_versions/
-.devcontainer/
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
