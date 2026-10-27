@@ -1,58 +1,50 @@
-# Contributing to Data Analytics AI Agent
+# Contributing
 
-First off, thank you for considering contributing to this project! It's people like you that make the open-source community such a fantastic place to learn, inspire, and create.
+## Setup
 
-## 🛠️ Development Setup
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
-To get started with local development, follow these steps:
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/shreyescodes/Data-Analytics-AI-Agent.git
-   cd Data-Analytics-AI-Agent
-   ```
-
-2. **Set up your environment:**
-   We use a `Makefile` to simplify setup. Run the following command to install the application dependencies and development dependencies (`pytest`, `black`, `flake8`):
-   ```bash
-   make install-dev
-   ```
-
-3. **Install Pre-commit Hooks:**
-   We enforce formatting and linting via `pre-commit`. Install the hooks to ensure your code is automatically formatted before you commit:
-   ```bash
-   pre-commit install
-   ```
-
-4. **Run the application locally:**
-   ```bash
-   make run
-   ```
-
-## ✅ Testing & Linting
-
-Before submitting a Pull Request, please ensure all checks pass:
-
-- **Run Linters (flake8, black, isort):**
-  ```bash
-  make lint
-  ```
-- **Run Unit Tests:**
-  ```bash
-  make test
-  ```
-
-## 🐳 Docker
-
-If you prefer to develop using Docker, you can build and run the application container using:
 ```bash
-make build
-make up
+git clone https://github.com/shreyescodes/Data-Analyst-AI-Agent.git
+cd Data-Analyst-AI-Agent
+make install        # uv sync --locked + pre-commit hooks
+make run            # http://localhost:8501
 ```
 
-## 📝 Pull Request Process
+Without `make`, run the commands from the [Makefile](Makefile) directly
+(for example `uv run pytest`).
 
-1. Ensure any new functionality includes tests.
-2. Update the `README.md` and `CHANGELOG.md` with details of changes if applicable.
-3. Your code must pass the GitHub Actions CI pipeline.
-4. When opening a PR, fill out the provided Pull Request Template completely.
+## Before opening a pull request
+
+```bash
+make check          # ruff lint + format check, mypy --strict, pytest with coverage
+```
+
+CI runs the same checks on Python 3.11 and 3.12 and builds the Docker image.
+
+## Conventions
+
+- **Layering:** business logic lives in the core modules of
+  `src/data_analyst_agent/` and must not import Streamlit. `ui/` only
+  translates between widgets and core calls. See
+  [ADR-0003](docs/decisions/0003-framework-free-core-with-thin-streamlit-ui.md).
+- **Errors:** raise a subclass of `DataAgentError` for expected failures (bad
+  input, provider errors); the UI shows its message. Let genuine bugs raise.
+- **Tests:** every behaviour change needs a test; every bug fix needs a
+  regression test that fails without the fix. UI flows can be tested with
+  `streamlit.testing.v1.AppTest` (see `tests/test_app.py`).
+- **Dependencies:** add them to `pyproject.toml` and run `uv lock`. Prefer the
+  standard library or an existing dependency.
+- **Decisions:** record significant design decisions as ADRs in
+  `docs/decisions/`.
+- **Commits:** [Conventional Commits](https://www.conventionalcommits.org/)
+  (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
+- **Changelog:** add user-facing changes to `CHANGELOG.md` under "Unreleased".
+
+## Screenshots
+
+If you change the UI, regenerate the README images (requires Google Chrome):
+
+```bash
+make screenshots
+```

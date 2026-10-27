@@ -1,0 +1,26 @@
+{
+  "dataset": "docs/data/penguins.csv",
+  "description": "Questions over the raw Palmer Penguins table with hand-written reference SQL. A question passes when the generated query returns the same rows as the reference.",
+  "cases": [
+    {"question": "How many penguins are there?", "sql": "SELECT COUNT(*) FROM dataset"},
+    {"question": "What is the average body mass?", "sql": "SELECT AVG(body_mass_g) FROM dataset"},
+    {"question": "What is the average body mass by species?", "sql": "SELECT species, AVG(body_mass_g) FROM dataset GROUP BY species"},
+    {"question": "How many penguins are there per island?", "sql": "SELECT island, COUNT(*) FROM dataset GROUP BY island"},
+    {"question": "What is the highest body mass recorded?", "sql": "SELECT MAX(body_mass_g) FROM dataset"},
+    {"question": "What is the shortest flipper length?", "sql": "SELECT MIN(flipper_length_mm) FROM dataset"},
+    {"question": "What is the total body mass by island?", "sql": "SELECT island, SUM(body_mass_g) FROM dataset GROUP BY island"},
+    {"question": "What is the average bill length for each sex?", "sql": "SELECT sex, AVG(bill_length_mm) FROM dataset WHERE sex IS NOT NULL GROUP BY sex"},
+    {"question": "How many female penguins are there?", "sql": "SELECT COUNT(*) FROM dataset WHERE sex = 'female'"},
+    {"question": "Which species has the longest average flipper length?", "sql": "SELECT species FROM dataset GROUP BY species ORDER BY AVG(flipper_length_mm) DESC LIMIT 1"},
+    {"question": "How many Gentoo penguins live on Biscoe island?", "sql": "SELECT COUNT(*) FROM dataset WHERE species = 'Gentoo' AND island = 'Biscoe'"},
+    {"question": "What is the average body mass of male Adelie penguins?", "sql": "SELECT AVG(body_mass_g) FROM dataset WHERE species = 'Adelie' AND sex = 'male'"},
+    {"question": "How many penguins were observed each year?", "sql": "SELECT year, COUNT(*) FROM dataset GROUP BY year"},
+    {"question": "How many penguins have no recorded sex?", "sql": "SELECT COUNT(*) FROM dataset WHERE sex IS NULL"},
+    {"question": "What are the body masses of the 5 heaviest penguins?", "sql": "SELECT body_mass_g FROM dataset ORDER BY body_mass_g DESC LIMIT 5"},
+    {"question": "What is the average bill depth of penguins heavier than 5000 grams?", "sql": "SELECT AVG(bill_depth_mm) FROM dataset WHERE body_mass_g > 5000"},
+    {"question": "How many distinct islands are there?", "sql": "SELECT COUNT(DISTINCT island) FROM dataset"},
+    {"question": "Which island has the most penguins?", "sql": "SELECT island FROM dataset GROUP BY island ORDER BY COUNT(*) DESC LIMIT 1"},
+    {"question": "What is the maximum bill length per species?", "sql": "SELECT species, MAX(bill_length_mm) FROM dataset GROUP BY species"},
+    {"question": "What is the average flipper length of penguins on Dream island?", "sql": "SELECT AVG(flipper_length_mm) FROM dataset WHERE island = 'Dream'"}
+  ]
+}

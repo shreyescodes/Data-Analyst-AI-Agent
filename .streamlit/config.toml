@@ -1,0 +1,14 @@
+[server]
+# Keep in sync with MAX_UPLOAD_MB (the app also checks it).
+maxUploadSize = 100
+headless = true
+
+[client]
+# Hide developer-only menu items such as "Deploy".
+toolbarMode = "viewer"
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+primaryColor = "#2563eb"

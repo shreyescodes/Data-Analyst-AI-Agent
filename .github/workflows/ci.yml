@@ -1,43 +1,90 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "master", "main" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.13.6"
 
 jobs:
-  build-and-test:
+  lint:
+    name: Lint & type-check
     runs-on: ubuntu-latest
-
     steps:
-    - name: Check out repository
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked --all-groups  # scripts/ are type-checked too
+      - name: Ruff
+        run: |
+          uv run ruff check --output-format=github src tests app.py scripts
+          uv run ruff format --check src tests app.py scripts
+      - name: Mypy (strict)
+        run: uv run mypy
 
-    - name: Set up Python
-      uses: actions/setup-python@v7
-      with:
-        python-version: "3.11"
-        cache: 'pip' # caching pip dependencies
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Pytest with coverage
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.12'
+        with:
+          name: coverage-report
+          path: coverage.xml
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install "setuptools<70"
-        pip install -r requirements.txt
-        pip install -r requirements-dev.txt
-
-    - name: Lint with flake8
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-
-    - name: Format check with black
-      run: |
-        black --check .
-
-    - name: Run tests with pytest
-      run: |
-        pytest tests/
+  docker:
+    name: Docker build & smoke test
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose file
+        run: docker compose config --quiet
+      - name: Build image
+        run: docker build -t data-analyst-agent:ci .
+      - name: Start container and wait for health endpoint
+        run: |
+          docker run -d --name app -p 8501:8501 data-analyst-agent:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8501/_stcore/health; then break; fi
+            if [ "$i" = 30 ]; then docker logs app; exit 1; fi
+            sleep 2
+          done
+      - name: Docker HEALTHCHECK reports healthy
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' app)
+            echo "health: $status"
+            if [ "$status" = healthy ]; then exit 0; fi
+            sleep 5
+          done
+          exit 1
+      - name: Runs as non-root
+        run: test "$(docker exec app id -u)" = 10001
+      - name: Core features work inside the image
+        run: docker exec -i app python - < scripts/container_smoke_test.py

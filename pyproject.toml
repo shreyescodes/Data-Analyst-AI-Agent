@@ -1,30 +1,126 @@
-[tool.black]
-line-length = 88
-target-version = ['py311']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-  | venv
-)/
-'''
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
 
-[tool.isort]
-profile = "black"
-line_length = 88
-multi_line_output = 3
+[project]
+name = "data-analyst-agent"
+version = "0.2.0"
+description = "Load, clean, query and visualise tabular data with natural language."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Shreyas" }]
+requires-python = ">=3.11"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+  "fg-data-profiling>=4.19",  # successor to the deprecated ydata-profiling
+  "numpy>=1.26",
+  "openpyxl>=3.1",
+  "pandas>=2.2,<3",
+  "plotly>=5.24",
+  "pyarrow>=16",
+  "requests>=2.32",
+  "sqlalchemy>=2.0",
+  "streamlit>=1.50",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2"]
+mysql = ["pymysql>=1.1"]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.13",
+  "pandas-stubs>=2.2",
+  "pre-commit>=4.0",
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "ruff>=0.8",
+  "types-requests>=2.32",
+]
+# Only needed to regenerate README screenshots (`make screenshots`).
+screenshots = ["playwright>=1.48"]
+
+[project.urls]
+Repository = "https://github.com/shreyescodes/Data-Analyst-AI-Agent"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/data_analyst_agent"]
+
+# --- Ruff --------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "B",        # bugbear
+  "UP",       # pyupgrade
+  "SIM",      # simplify
+  "C4",       # comprehensions
+  "RUF",      # ruff-specific
+  "PT",       # pytest style
+  "N",        # naming
+  "S",        # bandit (security)
+  "PTH",      # prefer pathlib
+  "RET",      # return statements
+  "T20",      # no print()
+  "BLE",      # no blind `except Exception`
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S608"]  # pytest asserts; SQL built from constants
+"scripts/**" = ["T201"]  # CLI scripts report progress with print()
+# SQL here is assembled only from quote_identifier() output, never raw input.
+"src/data_analyst_agent/assistant.py" = ["S608"]
+
+# --- Mypy --------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["src", "tests", "scripts"]
+
+[[tool.mypy.overrides]]
+module = ["plotly.*", "data_profiling.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+# Tests are type-checked, but fixtures and parametrised args need no annotations.
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_incomplete_defs = false
+
+# --- Pytest & coverage -------------------------------------------------------
 
 [tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "-ra -q"
-testpaths = [
-    "tests",
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+markers = [
+  "slow: tests that take several seconds (deselect with -m 'not slow')",
+  "live: tests that call a real LLM endpoint (opt in with RUN_LIVE_LLM_TESTS=1)",
 ]
+filterwarnings = ["error::FutureWarning:data_analyst_agent.*"]
+
+[tool.coverage.run]
+source = ["data_analyst_agent"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 85
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]
