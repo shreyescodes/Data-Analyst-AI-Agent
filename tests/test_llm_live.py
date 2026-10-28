@@ -44,14 +44,13 @@ def test_connection(assistant):
 
 
 def test_generated_sql_answers_the_question(assistant, sales):
-    generated = assistant.generate_sql(
-        "What is the total units sold per region?", Schema.from_frame(sales)
-    )
-
-    assert generated.source is Source.LLM, generated.note
     with SQLiteStore() as store:
         store.load(sales)
-        result = store.query(generated.sql)
+        generated, result = assistant.answer(
+            "What is the total units sold per region?", Schema.from_frame(sales), store.query
+        )
+
+    assert generated.source is Source.LLM, generated.note
     assert rows(result.frame) == {
         frozenset({"North", 17.0}),
         frozenset({"South", 8.0}),

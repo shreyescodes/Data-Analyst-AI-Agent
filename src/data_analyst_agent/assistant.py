@@ -2,8 +2,11 @@
 
 Two capabilities, each with an LLM path and a deterministic fallback:
 
-* :meth:`Assistant.generate_sql` turns a question into a SQLite query.
-  Only the schema (column names and types) is sent to the LLM, never rows.
+* :meth:`Assistant.answer` turns a question into a SQLite query and runs it.
+  When the model's query is rejected or fails, the error is sent back to the
+  model so it can correct the query, up to ``MAX_SQL_ATTEMPTS`` tries.
+  Only the schema (column names and types) and the model's own failed SQL
+  and error messages are sent to the LLM, never rows.
 * :meth:`Assistant.summarise` explains a query result in plain English.
   This sends up to ``_MAX_RESULT_ROWS`` result rows to the LLM.
 
@@ -16,20 +19,30 @@ from __future__ import annotations
 import logging
 import numbers
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
 import pandas as pd
 
-from data_analyst_agent.exceptions import DataAgentError, LLMError
+from data_analyst_agent.exceptions import LLMError, QueryTimeoutError, StorageError
 from data_analyst_agent.llm import ChatClient
 from data_analyst_agent.schema import Schema, normalise_text
-from data_analyst_agent.storage import TABLE_NAME, quote_identifier, validate_read_only
+from data_analyst_agent.storage import (
+    TABLE_NAME,
+    QueryResult,
+    quote_identifier,
+    validate_read_only,
+)
 
 logger = logging.getLogger(__name__)
 
+MAX_SQL_ATTEMPTS = 3
 _MAX_RESULT_ROWS = 50
 _MAX_RESULT_CHARS = 6_000
+_MAX_FAILED_REPLY_CHARS = 1_000
+
+RunQuery = Callable[[str], QueryResult]
 
 SQL_SYSTEM_PROMPT = f"""\
 You translate questions about a dataset into a single SQLite query.
@@ -55,10 +68,20 @@ class Source(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class FailedQuery:
+    """A model-written query that was rejected or failed, and why."""
+
+    sql: str
+    error: str
+
+
+@dataclass(frozen=True, slots=True)
 class GeneratedSQL:
     sql: str
     source: Source
     note: str | None = None
+    # Earlier model attempts that failed before ``sql`` was produced.
+    failed_attempts: tuple[FailedQuery, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,27 +111,79 @@ class Assistant:
             "Reply with the single word OK.", "ping", max_tokens=10, temperature=0.0
         )
 
-    def generate_sql(self, question: str, schema: Schema) -> GeneratedSQL:
-        if self._client is None:
-            return GeneratedSQL(rule_based_sql(question, schema), Source.RULES)
+    def answer(
+        self,
+        question: str,
+        schema: Schema,
+        run: RunQuery,
+        *,
+        max_attempts: int = MAX_SQL_ATTEMPTS,
+    ) -> tuple[GeneratedSQL, QueryResult]:
+        """Write SQL for ``question``, run it with ``run``, and repair it if it fails.
 
-        columns = "\n".join(f"- {c.name} ({c.kind.value})" for c in schema.columns)
-        try:
-            reply = self._client.complete(
-                SQL_SYSTEM_PROMPT,
-                f"Columns:\n{columns}\n\nQuestion: {question}",
-                max_tokens=400,
-                temperature=0.0,
-            )
-            sql = validate_read_only(extract_sql(reply))
-        except DataAgentError as exc:
-            logger.warning("LLM SQL generation failed, using rules: %s", exc)
-            return GeneratedSQL(
-                rule_based_sql(question, schema),
-                Source.RULES,
-                note=f"AI query generation failed ({exc}); used keyword rules instead.",
-            )
-        return GeneratedSQL(sql, Source.LLM)
+        A model reply without a usable query, a rejected statement, or a SQL
+        error is fed back to the model for another attempt. Timeouts are
+        raised rather than retried. If the provider fails or every attempt
+        fails, the keyword rules answer instead and the result says why.
+        """
+        if self._client is None:
+            return self._answer_with_rules(question, schema, run)
+
+        failures: list[FailedQuery] = []
+        while len(failures) < max_attempts:
+            try:
+                reply = self._client.complete(
+                    SQL_SYSTEM_PROMPT,
+                    _sql_prompt(question, schema, failures),
+                    max_tokens=400,
+                    temperature=0.0,
+                )
+            except LLMError as exc:
+                logger.warning("LLM SQL generation failed, using rules: %s", exc)
+                return self._answer_with_rules(
+                    question,
+                    schema,
+                    run,
+                    note=f"AI query generation failed ({exc}); used keyword rules instead.",
+                    failures=failures,
+                )
+
+            sql = reply.strip()[:_MAX_FAILED_REPLY_CHARS]
+            try:
+                sql = validate_read_only(extract_sql(reply))
+                result = run(sql)
+            except QueryTimeoutError:
+                raise
+            except (LLMError, StorageError) as exc:
+                logger.info("Model query failed (attempt %d): %s", len(failures) + 1, exc)
+                failures.append(FailedQuery(sql, str(exc)))
+                continue
+            return GeneratedSQL(sql, Source.LLM, failed_attempts=tuple(failures)), result
+
+        logger.warning("Model query failed %d times, using rules", len(failures))
+        return self._answer_with_rules(
+            question,
+            schema,
+            run,
+            note=(
+                f"The AI query failed {len(failures)} times (last error: "
+                f"{failures[-1].error}); used keyword rules instead."
+            ),
+            failures=failures,
+        )
+
+    @staticmethod
+    def _answer_with_rules(
+        question: str,
+        schema: Schema,
+        run: RunQuery,
+        *,
+        note: str | None = None,
+        failures: list[FailedQuery] | None = None,
+    ) -> tuple[GeneratedSQL, QueryResult]:
+        sql = rule_based_sql(question, schema)
+        generated = GeneratedSQL(sql, Source.RULES, note, tuple(failures or ()))
+        return generated, run(sql)
 
     def summarise(self, question: str, sql: str, result: pd.DataFrame) -> Insight:
         if self._client is None or result.empty:
@@ -137,7 +212,22 @@ class Assistant:
         return Insight(text, Source.LLM)
 
 
-# --- SQL extraction ----------------------------------------------------------
+# --- Prompting and SQL extraction --------------------------------------------
+
+
+def _sql_prompt(question: str, schema: Schema, failures: list[FailedQuery]) -> str:
+    columns = "\n".join(f"- {c.name} ({c.kind.value})" for c in schema.columns)
+    prompt = f"Columns:\n{columns}\n\nQuestion: {question}"
+    if failures:
+        attempts = "\n\n".join(
+            f"Attempt {i}:\n{f.sql}\nError: {f.error}" for i, f in enumerate(failures, 1)
+        )
+        prompt += (
+            f"\n\nYour previous queries failed:\n\n{attempts}\n\n"
+            "Write a corrected query that avoids these errors."
+        )
+    return prompt
+
 
 _FENCE = re.compile(r"```(?:sql)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 _QUERY_START = re.compile(r"\b(with|select)\b", re.IGNORECASE)

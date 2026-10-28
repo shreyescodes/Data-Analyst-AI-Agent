@@ -1,6 +1,7 @@
 """Measure natural-language-to-SQL accuracy on a fixed question set.
 
-For each case the generated query and the reference query are both run on
+For each case the assistant answers the question as the app does (writing SQL,
+running it and repairing it on errors), and the reference query is run on
 the read-only store. A case passes when the results match: same number of
 rows, and every reference row's values appear in a distinct generated row
 (extra columns, column order, row order and float noise are ignored).
@@ -21,7 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from data_analyst_agent.assistant import Assistant, Source
+from data_analyst_agent.assistant import Assistant, GeneratedSQL, Source
 from data_analyst_agent.config import Settings
 from data_analyst_agent.exceptions import DataAgentError
 from data_analyst_agent.llm import build_client
@@ -68,26 +69,26 @@ def main() -> None:
     assistant = Assistant(build_client(settings))
     mode = f"LLM {settings.llm_model} @ {settings.llm_base_url}" if assistant.uses_llm else "rules"
 
-    passed = 0
+    passed = self_corrected = 0
     latencies: list[float] = []
     print(f"Mode: {mode}\n")
     with SQLiteStore(row_limit=100_000, timeout_seconds=30) as store:
         store.load(df)
         for i, case in enumerate(spec["cases"], 1):
             started = time.perf_counter()
-            generated = assistant.generate_sql(case["question"], schema)
-            latencies.append(time.perf_counter() - started)
             try:
-                ok = results_match(store.query(case["sql"]).frame, store.query(generated.sql).frame)
-            except DataAgentError:
-                ok = False
-            fallback = (
-                " (fell back to rules)"
-                if generated.source is Source.RULES and assistant.uses_llm
-                else ""
-            )
+                generated, result = assistant.answer(case["question"], schema, store.query)
+            except DataAgentError as exc:
+                latencies.append(time.perf_counter() - started)
+                print(f"FAIL  {i:>2}. {case['question']} ({exc})")
+                continue
+            latencies.append(time.perf_counter() - started)
+            ok = results_match(store.query(case["sql"]).frame, result.frame)
             passed += ok
-            print(f"{'PASS' if ok else 'FAIL'}  {i:>2}. {case['question']}{fallback}")
+            self_corrected += (
+                ok and generated.source is Source.LLM and bool(generated.failed_attempts)
+            )
+            print(f"{'PASS' if ok else 'FAIL'}  {i:>2}. {case['question']}{_tags(generated)}")
             if not ok:
                 print(f"        generated: {generated.sql}")
 
@@ -95,8 +96,18 @@ def main() -> None:
     latencies.sort()
     print(
         f"\nExecution accuracy: {passed}/{total} ({passed / total:.0%})"
-        f" | median SQL generation latency: {latencies[len(latencies) // 2]:.1f}s"
+        f" | passed after self-correction: {self_corrected}"
+        f" | median time to answer: {latencies[len(latencies) // 2]:.1f}s"
     )
+
+
+def _tags(generated: GeneratedSQL) -> str:
+    tags = []
+    if generated.failed_attempts:
+        tags.append(f"{len(generated.failed_attempts)} failed attempt(s)")
+    if generated.source is Source.RULES and generated.note:
+        tags.append("fell back to rules")
+    return f" ({', '.join(tags)})" if tags else ""
 
 
 if __name__ == "__main__":

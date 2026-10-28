@@ -7,9 +7,16 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Self-correcting SQL generation: when the model's query is rejected or fails, the error is sent back to the model, up to 3 attempts, before falling back to keyword rules. The Ask tab shows the failed attempts, and the evaluation scores this full loop.
 - Local models with no API key: pointing `LLM_BASE_URL` at Ollama, LM Studio or llama.cpp enables AI features, and the UI states that no data leaves the machine.
 - NL-to-SQL evaluation: 20 questions with reference SQL over the penguins data, scored on execution accuracy (`make eval`).
 - Opt-in live LLM tests (`pytest -m live`) and an LLM mode for the screenshot script.
+
+### Fixed
+- A misspelled double-quoted column (`"colour"`) no longer runs as a string literal and silently returns wrong results; it is now a SQL error (Python 3.12+).
+
+### Removed
+- `CODEOWNERS`, which only requested the sole maintainer's review of their own pull requests.
 - "Local LLM" CI workflow: serves qwen2.5-coder:3b with Ollama (no API key) and runs the live tests, the evaluation (15/20 vs 8/20 for the rules) and the AI screenshots.
 - Docker CI job now waits for the container's HEALTHCHECK, verifies the non-root user, and runs a functional smoke test inside the container.
 
