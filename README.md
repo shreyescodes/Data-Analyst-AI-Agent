@@ -208,6 +208,10 @@ both return the same rows, ignoring column names, column and row order, and floa
   it has never seen (for example `species = 'Adelie Penguin'`, or adding a species filter to "how
   many penguins are there?"). The fifth includes the `NULL` group in "average bill length for each
   sex". Larger models, or passing example column values in the prompt, are the obvious next steps.
+- Self-correction (sending a failed query's error back to the model) did not change this score: on
+  this question set the 3B model never wrote a query that failed; every miss ran and returned the
+  wrong rows. Its value is on queries that do fail, such as a misspelled column, which the unit and
+  end-to-end tests cover.
 - The live run also caught the model writing a wrong summary ("South sold the most", when North
   did). Summaries are now grounded in facts computed in code, and a live test guards against it.
 
