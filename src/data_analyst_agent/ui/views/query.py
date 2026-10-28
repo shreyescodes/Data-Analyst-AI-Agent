@@ -66,8 +66,7 @@ def render(state: SessionState, settings: Settings, assistant: Assistant) -> Non
     if asked and question.strip():
         with st.spinner("Thinking..."):
             try:
-                generated = assistant.generate_sql(question, schema)
-                result = store.query(generated.sql)
+                generated, result = assistant.answer(question, schema, store.query)
                 insight = assistant.summarise(question, generated.sql, result.frame)
             except DataAgentError as exc:
                 st.error(str(exc))
@@ -102,6 +101,12 @@ def _render_answer(answer: Answer) -> None:
     label = "AI-generated SQL" if answer.generated.source is Source.LLM else "Rule-based SQL"
     st.markdown(f"**{label}**")
     st.code(answer.generated.sql, language="sql", wrap_lines=True)
+    failed = answer.generated.failed_attempts
+    if failed and answer.generated.source is Source.LLM:
+        with st.expander(f"Self-corrected after {len(failed)} failed attempt(s)"):
+            for attempt in failed:
+                st.code(attempt.sql, language="sql", wrap_lines=True)
+                st.caption(attempt.error)
     for note in (answer.generated.note, answer.insight.note):
         if note:
             st.warning(note)

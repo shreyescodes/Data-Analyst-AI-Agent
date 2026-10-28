@@ -4,14 +4,17 @@ import pandas as pd
 import pytest
 
 from data_analyst_agent.assistant import (
+    MAX_SQL_ATTEMPTS,
     Assistant,
+    FailedQuery,
     Source,
     extract_sql,
     rule_based_sql,
     rule_based_summary,
 )
-from data_analyst_agent.exceptions import LLMError
+from data_analyst_agent.exceptions import LLMError, QueryTimeoutError, StorageError
 from data_analyst_agent.schema import Schema
+from data_analyst_agent.storage import SQLiteStore
 
 
 @dataclass
@@ -33,6 +36,16 @@ class FakeClient:
 @pytest.fixture
 def schema(sales):
     return Schema.from_frame(sales)
+
+
+@pytest.fixture
+def store(sales):
+    with SQLiteStore() as store:
+        store.load(sales)
+        yield store
+
+
+COUNT_SQL = 'SELECT COUNT(*) AS "row_count" FROM "dataset"'
 
 
 class TestRuleBasedSQL:
@@ -73,12 +86,8 @@ class TestRuleBasedSQL:
 
         assert sql.startswith('SELECT "Store Name", ROUND(AVG("Unit Price"), 2)')
 
-    def test_generated_sql_runs(self, sales, schema):
-        from data_analyst_agent.storage import SQLiteStore
-
-        with SQLiteStore() as store:
-            store.load(sales)
-            result = store.query(rule_based_sql("average units by region", schema))
+    def test_generated_sql_runs(self, schema, store):
+        result = store.query(rule_based_sql("average units by region", schema))
 
         assert result.frame.iloc[0].tolist() == ["North", 8.5]
 
@@ -105,38 +114,119 @@ class TestExtractSQL:
 
 
 class TestAssistant:
-    def test_without_client_uses_rules(self, schema):
-        generated = Assistant(None).generate_sql("how many rows", schema)
+    def test_without_client_uses_rules(self, schema, store):
+        generated, result = Assistant(None).answer("how many rows", schema, store.query)
 
         assert generated.source is Source.RULES
         assert generated.note is None
+        assert result.frame.iat[0, 0] == 5
 
-    def test_llm_sql_and_prompt_contents(self, schema):
+    def test_llm_sql_and_prompt_contents(self, schema, store):
         client = FakeClient(['```sql\nSELECT "region" FROM "dataset"\n```'])
 
-        generated = Assistant(client).generate_sql("list regions", schema)
+        generated, result = Assistant(client).answer("list regions", schema, store.query)
 
-        assert generated == generated.__class__('SELECT "region" FROM "dataset"', Source.LLM)
+        assert generated.sql == 'SELECT "region" FROM "dataset"'
+        assert generated.source is Source.LLM
+        assert generated.failed_attempts == ()
+        assert len(result.frame) == 5
         _, user_prompt = client.prompts[0]
         assert "- unit_price (numeric)" in user_prompt
         assert "list regions" in user_prompt
+        assert "previous queries failed" not in user_prompt
 
-    def test_schema_only_is_sent_for_sql(self, sales, schema):
+    def test_schema_only_is_sent_for_sql(self, schema, store):
         client = FakeClient(["SELECT 1"])
 
-        Assistant(client).generate_sql("anything", schema)
+        Assistant(client).answer("anything", schema, store.query)
 
         assert "North" not in client.prompts[0][1]
 
-    @pytest.mark.parametrize(
-        "reply", [LLMError("provider down"), "DELETE FROM dataset", "no sql here"]
-    )
-    def test_falls_back_to_rules(self, schema, reply):
-        generated = Assistant(FakeClient([reply])).generate_sql("how many rows", schema)
+    def test_provider_failure_falls_back_to_rules(self, schema, store):
+        client = FakeClient([LLMError("provider down")])
+
+        generated, _ = Assistant(client).answer("how many rows", schema, store.query)
 
         assert generated.source is Source.RULES
-        assert generated.sql == 'SELECT COUNT(*) AS "row_count" FROM "dataset"'
-        assert generated.note
+        assert generated.sql == COUNT_SQL
+        assert "provider down" in (generated.note or "")
+        assert len(client.prompts) == 1  # provider errors are not retried
+
+    @pytest.mark.parametrize(
+        ("bad_reply", "error"),
+        [
+            ('SELECT "region" FROM "dataset" WHERE colour = 1', "no such column: colour"),
+            ("WITH t AS (SELECT 1) DELETE FROM dataset", "tried to modify data"),
+            ("DROP TABLE dataset", "did not contain a SELECT"),
+        ],
+    )
+    def test_repairs_a_failed_query(self, schema, store, bad_reply, error):
+        client = FakeClient([bad_reply, COUNT_SQL])
+
+        generated, result = Assistant(client).answer("how many rows", schema, store.query)
+
+        assert generated.source is Source.LLM
+        assert generated.sql == COUNT_SQL
+        assert result.frame.iat[0, 0] == 5
+        [failed] = generated.failed_attempts
+        assert error in failed.error
+        # The second prompt shows the model its own query and the error.
+        retry_prompt = client.prompts[1][1]
+        assert "Your previous queries failed" in retry_prompt
+        assert failed.sql in retry_prompt
+        assert error in retry_prompt
+
+    def test_falls_back_to_rules_after_max_attempts(self, schema, store):
+        bad = 'SELECT missing FROM "dataset"'
+        client = FakeClient([bad] * MAX_SQL_ATTEMPTS)
+
+        generated, result = Assistant(client).answer("how many rows", schema, store.query)
+
+        assert generated.source is Source.RULES
+        assert generated.sql == COUNT_SQL
+        assert len(generated.failed_attempts) == MAX_SQL_ATTEMPTS
+        assert f"failed {MAX_SQL_ATTEMPTS} times" in (generated.note or "")
+        assert "no such column: missing" in (generated.note or "")
+        assert result.frame.iat[0, 0] == 5
+
+    def test_every_failure_is_shown_on_later_attempts(self, schema, store):
+        client = FakeClient(["SELECT a FROM dataset", "SELECT b FROM dataset", COUNT_SQL])
+
+        generated, _ = Assistant(client).answer("how many rows", schema, store.query)
+
+        assert [f.sql for f in generated.failed_attempts] == [
+            "SELECT a FROM dataset",
+            "SELECT b FROM dataset",
+        ]
+        last_prompt = client.prompts[2][1]
+        assert "Attempt 1:\nSELECT a FROM dataset" in last_prompt
+        assert "Attempt 2:\nSELECT b FROM dataset" in last_prompt
+
+    def test_timeouts_are_not_retried(self, schema):
+        client = FakeClient(["SELECT 1", "SELECT 2"])
+
+        def run(sql):
+            raise QueryTimeoutError("too slow")
+
+        with pytest.raises(QueryTimeoutError):
+            Assistant(client).answer("q", schema, run)
+        assert len(client.prompts) == 1
+
+    def test_rule_based_query_errors_propagate(self, schema):
+        def run(sql):
+            raise StorageError("store unavailable")
+
+        with pytest.raises(StorageError, match="store unavailable"):
+            Assistant(None).answer("how many rows", schema, run)
+
+    def test_long_non_sql_replies_are_truncated(self, schema, store):
+        client = FakeClient(["x" * 5_000, COUNT_SQL])
+
+        generated, _ = Assistant(client).answer("how many rows", schema, store.query)
+
+        assert generated.failed_attempts == (
+            FailedQuery("x" * 1_000, "The model reply did not contain a SELECT query."),
+        )
 
     def test_summary_with_llm(self, sales):
         client = FakeClient(["North sells the most."])

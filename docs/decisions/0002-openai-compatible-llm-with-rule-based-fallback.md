@@ -23,6 +23,9 @@ fell back to keyword matching without the user knowing why.
   `LLM_BASE_URL` and `LLM_MODEL` switch to OpenAI, Groq, a local Ollama, etc.
 - The core depends on a `ChatClient` protocol, not on the HTTP client, so
   tests use an in-memory fake.
+- A model query that is rejected (not a single `SELECT`) or fails in SQLite
+  is sent back to the model with the error message, up to 3 attempts in
+  total. Provider errors and timeouts are not retried this way.
 - Every LLM feature has a deterministic fallback (keyword-based SQL,
   statistical summary). When the fallback is used because the LLM failed, the
   UI says so and shows the reason.

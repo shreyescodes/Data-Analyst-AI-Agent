@@ -22,6 +22,10 @@ class StorageError(DataAgentError):
     """The query store could not load data or execute a query."""
 
 
+class QueryTimeoutError(StorageError):
+    """A query ran longer than the configured time limit and was interrupted."""
+
+
 class UnsafeQueryError(StorageError):
     """A SQL statement was rejected because it is not a read-only query."""
 

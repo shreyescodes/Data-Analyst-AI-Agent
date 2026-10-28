@@ -30,6 +30,8 @@ A single workflow that takes a raw file to answers:
    and no step silently loses data.
 3. **Ask** questions in English. They are translated to SQL (by an LLM if one
    is configured, otherwise by keyword rules), run read-only, and summarised.
+   If the model's query fails, the error goes back to the model so it can fix
+   the query.
 4. **Visualise** from a plain-English request, or take a quick look at
    correlations and distributions.
 5. **Profile** the dataset with a full HTML report, and **snapshot** versions
@@ -92,7 +94,7 @@ matches pandas.
 |---|---|
 | Ingestion | CSV (UTF-8 with BOM, Latin-1 fallback) and XLSX upload; JSON/CSV HTTP APIs, with common envelopes (`data`, `results`, ...) unwrapped and nested fields flattened; any SQLAlchemy database (SQLite built in, PostgreSQL and MySQL via extras). |
 | Cleaning | Normalise whitespace (blank strings become missing), parse date columns, convert numbers stored as text, remove duplicates, handle missing values (6 strategies), optionally remove IQR outliers. A column is only re-typed when **every** value converts. |
-| Querying | English to SQL by an LLM, or by keyword rules (averages, totals, min/max, counts, each optionally grouped by a column). Hand-written SQL in an editor that is pre-filled with the generated query. |
+| Querying | English to SQL by an LLM, or by keyword rules (averages, totals, min/max, counts, each optionally grouped by a column). A model query that is rejected or fails is sent back to the model with the error, up to 3 attempts, and the UI shows the failed attempts. Hand-written SQL in an editor that is pre-filled with the generated query. |
 | Safety | Read-only SQLite connection, row cap, query timeout, SSRF guard on the API loader, upload size limit. |
 | Visualisation | Line, bar, scatter, histogram, box and pie charts chosen from a request; correlation heatmap; distribution plot. |
 | Profiling | Full or minimal HTML report; fast mode switches on automatically for large datasets. |
@@ -136,15 +138,20 @@ sequenceDiagram
     participant S as SQLiteStore (read-only)
 
     User->>UI: "average body mass by species"
-    UI->>A: generate_sql(question, schema)
+    UI->>A: answer(question, schema, run=store.query)
     alt LLM configured
-        A->>L: schema + question (no rows)
-        L-->>A: SQL
-    else no key, or LLM error
+        loop up to 3 attempts
+            A->>L: schema + question (+ earlier failed SQL and errors; no rows)
+            L-->>A: SQL
+            A->>S: query(sql)
+            S-->>A: rows (capped, time-limited), or an error
+        end
+    else no key, provider error, or every attempt failed
         A->>A: keyword rules
+        A->>S: query(sql)
+        S-->>A: rows
     end
-    UI->>S: query(sql)
-    S-->>UI: rows (capped, time-limited)
+    A-->>UI: SQL, rows, failed attempts
     UI->>A: summarise(question, sql, rows)
     A-->>UI: answer + source (LLM or rules)
 ```
@@ -176,7 +183,7 @@ provider when one is configured (see [Security](#security)).
 
 ## Evaluation
 
-- **Automated tests:** 193 tests (`pytest`), ~90% branch coverage, enforced at ≥85% in CI. They include:
+- **Automated tests:** 202 tests (`pytest`), ~90% branch coverage, enforced at ≥85% in CI. They include:
   - regression tests for each bug fixed in the rewrite (for example `NaN` becoming the string `"nan"`, outlier removal dropping rows with missing values, broken chart type inference);
   - security tests proving writes, multi-statement injection and runaway queries are refused, and that private-network URLs are blocked;
   - end-to-end tests that drive the real Streamlit app (load → clean → ask → snapshot) with `streamlit.testing.v1.AppTest`.
@@ -201,6 +208,10 @@ both return the same rows, ignoring column names, column and row order, and floa
   it has never seen (for example `species = 'Adelie Penguin'`, or adding a species filter to "how
   many penguins are there?"). The fifth includes the `NULL` group in "average bill length for each
   sex". Larger models, or passing example column values in the prompt, are the obvious next steps.
+- Self-correction (sending a failed query's error back to the model) did not change this score: on
+  this question set the 3B model never wrote a query that failed; every miss ran and returned the
+  wrong rows. Its value is on queries that do fail, such as a misspelled column, which the unit and
+  end-to-end tests cover.
 - The live run also caught the model writing a wrong summary ("South sold the most", when North
   did). Summaries are now grounded in facts computed in code, and a live test guards against it.
 
@@ -328,7 +339,7 @@ Dependabot keeps the lock file, the Docker base image and the Actions up to date
 │   ├── ingestion.py             # Files, HTTP APIs, SQL databases
 │   ├── cleaning.py              # Quality assessment + cleaning pipeline
 │   ├── storage.py               # Read-only SQLite query store
-│   ├── assistant.py             # NL → SQL and summaries, with fallbacks
+│   ├── assistant.py             # NL → SQL with self-correction, summaries, fallbacks
 │   ├── llm.py                   # OpenAI-compatible chat client
 │   ├── schema.py                # Column classification and matching
 │   ├── charts.py                # Chart suggestion and rendering
@@ -345,14 +356,16 @@ Dependabot keeps the lock file, the Docker base image and the Actions up to date
 ## Limitations
 
 - Rule-based mode understands a fixed set of question shapes (one aggregate, optionally grouped by one column). Anything more complex needs an LLM key or hand-written SQL.
-- LLM-generated SQL can be wrong. The generated query is always shown and editable, but answers should be checked.
+- LLM-generated SQL can be wrong. Self-correction only fixes queries that **fail**; a query that runs but answers the wrong question (for example filtering on a category value that does not exist) is not caught. The generated query is always shown and editable, but answers should be checked.
+- On Python 3.11, SQLite reads a misspelled double-quoted column (`"colour"`) as a string literal instead of raising an error, so such a query runs and returns wrong results rather than being corrected. Python 3.12+ (used by the Docker image) turns this into an error.
 - Data lives in memory per browser session; very large datasets (tens of millions of rows) need a different backend.
 - IQR outlier removal is generic: on columns with a few discrete values (for example price tiers) it can remove legitimate rows. It is off by default.
 - No authentication or multi-user access control; deploy behind an authenticating proxy if exposed.
 
 ## Future improvements
 
-- Run the evaluation in CI against a small local model, and grow the question set beyond one dataset.
+- Grow the evaluation beyond 20 questions on one dataset; at this size a difference of a few questions is within noise.
+- Catch queries that run but answer wrongly: when a filter matches no rows, check the value against the column's actual values and retry.
 - Per-column cleaning options (choose which columns each step touches).
 - DuckDB backend for larger datasets (see ADR-0001).
 - Scheduled pipelines and report export.
