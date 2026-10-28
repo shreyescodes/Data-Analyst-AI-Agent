@@ -13,6 +13,7 @@ import logging
 import re
 import shutil
 import sqlite3
+import sys
 import tempfile
 import time
 import weakref
@@ -22,7 +23,7 @@ from types import TracebackType
 
 import pandas as pd
 
-from data_analyst_agent.exceptions import StorageError, UnsafeQueryError
+from data_analyst_agent.exceptions import QueryTimeoutError, StorageError, UnsafeQueryError
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ class SQLiteStore:
                 columns = [d[0] for d in cursor.description or ()]
         except sqlite3.OperationalError as exc:
             if "interrupted" in str(exc):
-                raise StorageError(
+                raise QueryTimeoutError(
                     f"Query exceeded the {self.timeout_seconds:g}s time limit."
                 ) from exc
             if "readonly" in str(exc) or "read-only" in str(exc):
@@ -134,4 +135,10 @@ class SQLiteStore:
             raise StorageError("No data has been loaded into the query store yet.")
         conn = sqlite3.connect(f"{self._path.as_uri()}?mode=ro", uri=True)
         conn.execute("PRAGMA query_only = ON")
+        if sys.version_info >= (3, 12):
+            # By default SQLite reads a double-quoted name that matches no column
+            # as a string literal, so a misspelled column silently gives wrong
+            # results. Make it a "no such column" error instead. Python 3.11
+            # cannot change this setting and keeps SQLite's lenient default.
+            conn.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DML, False)
         return conn

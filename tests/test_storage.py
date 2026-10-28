@@ -1,7 +1,9 @@
+import sys
+
 import pandas as pd
 import pytest
 
-from data_analyst_agent.exceptions import StorageError, UnsafeQueryError
+from data_analyst_agent.exceptions import QueryTimeoutError, StorageError, UnsafeQueryError
 from data_analyst_agent.storage import (
     TABLE_NAME,
     SQLiteStore,
@@ -103,6 +105,13 @@ class TestSQLiteStore:
         with pytest.raises(StorageError, match="no such column"):
             store.query(f"SELECT missing FROM {TABLE_NAME}")
 
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="needs Connection.setconfig")
+    def test_misspelled_quoted_column_is_an_error(self, store):
+        # Regression: SQLite read "colour" as the string 'colour', so the
+        # query ran and silently returned no rows instead of failing.
+        with pytest.raises(StorageError, match='no such column: "colour"'):
+            store.query(f'SELECT * FROM {TABLE_NAME} WHERE "colour" = 1')
+
     def test_long_queries_time_out(self, sales):
         with SQLiteStore(timeout_seconds=0.05) as slow:
             slow.load(sales)
@@ -110,7 +119,7 @@ class TestSQLiteStore:
                 "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) "
                 "SELECT COUNT(*) FROM n"
             )
-            with pytest.raises(StorageError, match="time limit"):
+            with pytest.raises(QueryTimeoutError, match="time limit"):
                 slow.query(endless)
 
     def test_query_before_load(self):

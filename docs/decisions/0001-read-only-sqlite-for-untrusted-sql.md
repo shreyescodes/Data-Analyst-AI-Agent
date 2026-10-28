@@ -25,7 +25,10 @@ SQLite itself refuses any write. On top of that:
 - a cheap prefix check (`SELECT`/`WITH`) gives a clear error message;
 - Python's `sqlite3` refuses multiple statements in one call;
 - results are capped (`QUERY_ROW_LIMIT`), and a progress handler interrupts
-  queries that exceed `QUERY_TIMEOUT_SECONDS`.
+  queries that exceed `QUERY_TIMEOUT_SECONDS`;
+- on Python 3.12+, `SQLITE_DBCONFIG_DQS_DML` is switched off, so a misspelled
+  double-quoted column is a "no such column" error instead of being read as
+  a string literal.
 
 ## Alternatives considered
 
