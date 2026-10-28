@@ -141,7 +141,7 @@ sequenceDiagram
     UI->>A: answer(question, schema, run=store.query)
     alt LLM configured
         loop up to 3 attempts
-            A->>L: schema + question (+ earlier failed SQL and errors; no rows)
+            A->>L: schema + question (+ earlier failed SQL and errors, never rows)
             L-->>A: SQL
             A->>S: query(sql)
             S-->>A: rows (capped, time-limited), or an error
