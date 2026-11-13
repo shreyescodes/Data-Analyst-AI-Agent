@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Build stage: resolve and install dependencies into a virtualenv --------
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable
 
 # ---- Runtime stage: no build tools, non-root user ---------------------------
-FROM python:3.12-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 RUN useradd --create-home --uid 10001 app \
     && mkdir -p /data/versions \
